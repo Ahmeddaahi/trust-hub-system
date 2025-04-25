@@ -1,14 +1,12 @@
-
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-
 const Index = () => {
-  const { isAuthenticated } = useAuth();
+  const {
+    isAuthenticated
+  } = useAuth();
   const navigate = useNavigate();
-
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
+  return <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
       <div className="text-center max-w-3xl px-4">
         <h1 className="text-4xl font-bold mb-4 text-blue-900">Secure Authentication System</h1>
         <p className="text-xl text-gray-700 mb-8">
@@ -16,33 +14,16 @@ const Index = () => {
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          {isAuthenticated ? (
-            <Button 
-              size="lg"
-              onClick={() => navigate("/dashboard")}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
+          {isAuthenticated ? <Button size="lg" onClick={() => navigate("/dashboard")} className="bg-blue-600 hover:bg-blue-700">
               Go to Dashboard
-            </Button>
-          ) : (
-            <>
-              <Button 
-                size="lg"
-                onClick={() => navigate("/login")}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
+            </Button> : <>
+              <Button size="lg" onClick={() => navigate("/login")} className="bg-blue-600 hover:bg-blue-700">
                 Login
               </Button>
-              <Button 
-                size="lg" 
-                onClick={() => navigate("/register")}
-                variant="outline"
-                className="border-blue-600 text-blue-600 hover:bg-blue-50"
-              >
+              <Button size="lg" onClick={() => navigate("/register")} variant="outline" className="border-blue-600 text-blue-600 text-base font-bold text-justify bg-zinc-100 rounded-lg">
                 Register
               </Button>
-            </>
-          )}
+            </>}
         </div>
         
         <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -68,8 +49,6 @@ const Index = () => {
           </div>
         </div>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default Index;
