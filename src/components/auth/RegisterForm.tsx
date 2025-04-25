@@ -7,6 +7,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { z } from 'zod';
+import { toast } from '@/components/ui/use-toast';
+
+// Form validation schema
+const registerSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Please enter a valid email"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  confirmPassword: z.string()
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"]
+});
 
 export default function RegisterForm() {
   const [name, setName] = useState('');
@@ -15,27 +28,38 @@ export default function RegisterForm() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [passwordError, setPasswordError] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const validatePassword = () => {
-    if (password !== confirmPassword) {
-      setPasswordError("Passwords don't match");
+  const validateForm = () => {
+    try {
+      registerSchema.parse({
+        name,
+        email,
+        password,
+        confirmPassword
+      });
+      setErrors({});
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const newErrors: Record<string, string> = {};
+        error.errors.forEach((err) => {
+          if (err.path.length > 0) {
+            newErrors[err.path[0].toString()] = err.message;
+          }
+        });
+        setErrors(newErrors);
+      }
       return false;
     }
-    if (password.length < 8) {
-      setPasswordError("Password must be at least 8 characters");
-      return false;
-    }
-    setPasswordError('');
-    return true;
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validatePassword()) {
+    if (!validateForm()) {
       return;
     }
     
@@ -43,8 +67,14 @@ export default function RegisterForm() {
     try {
       const success = await register(name, email, password);
       if (success) {
+        toast({
+          title: "Registration successful",
+          description: "Please check your email for verification",
+        });
         navigate('/login');
       }
+    } catch (error) {
+      console.error("Registration error:", error);
     } finally {
       setIsSubmitting(false);
     }
@@ -69,7 +99,11 @@ export default function RegisterForm() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
+                className={errors.name ? "border-destructive" : ""}
               />
+              {errors.name && (
+                <p className="text-sm text-destructive">{errors.name}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -80,7 +114,11 @@ export default function RegisterForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                className={errors.email ? "border-destructive" : ""}
               />
+              {errors.email && (
+                <p className="text-sm text-destructive">{errors.email}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
@@ -92,7 +130,7 @@ export default function RegisterForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="pr-10"
+                  className={`pr-10 ${errors.password ? "border-destructive" : ""}`}
                 />
                 <button
                   type="button"
@@ -102,6 +140,9 @@ export default function RegisterForm() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              {errors.password && (
+                <p className="text-sm text-destructive">{errors.password}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm password</Label>
@@ -112,9 +153,10 @@ export default function RegisterForm() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
+                className={errors.confirmPassword ? "border-destructive" : ""}
               />
-              {passwordError && (
-                <p className="text-sm text-destructive">{passwordError}</p>
+              {errors.confirmPassword && (
+                <p className="text-sm text-destructive">{errors.confirmPassword}</p>
               )}
             </div>
           </CardContent>

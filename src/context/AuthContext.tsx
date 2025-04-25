@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { toast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 // Define the user type
 interface User {
@@ -46,18 +47,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const storedUser = localStorage.getItem('user');
-        const storedRefreshToken = localStorage.getItem('refreshToken');
+        // Get the session from Supabase
+        const { data: { session } } = await supabase.auth.getSession();
         
-        if (storedUser && storedRefreshToken) {
-          setUser(JSON.parse(storedUser));
-          setRefreshTokenValue(storedRefreshToken);
+        if (session) {
+          // Set user from Supabase session
+          const userData: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || '',
+            role: session.user.user_metadata?.role || 'user',
+          };
           
-          // Try to get a new access token
-          const success = await refreshAccessToken(storedRefreshToken);
-          if (!success) {
-            handleLogout();
-          }
+          setUser(userData);
+          setAccessToken(session.access_token);
+          setRefreshTokenValue(session.refresh_token);
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
@@ -69,91 +73,66 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     initializeAuth();
 
+    // Set up auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (session) {
+          const userData: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || '',
+            role: session.user.user_metadata?.role || 'user',
+          };
+          
+          setUser(userData);
+          setAccessToken(session.access_token);
+          setRefreshTokenValue(session.refresh_token);
+        } else {
+          setUser(null);
+          setAccessToken(null);
+          setRefreshTokenValue(null);
+        }
+      }
+    );
+
     return () => {
+      subscription.unsubscribe();
       if (refreshTimerId) {
         clearInterval(refreshTimerId);
       }
     };
   }, []);
 
-  // Setup token refresh interval when we have a refresh token
-  useEffect(() => {
-    if (refreshTokenValue && accessToken) {
-      setupRefreshInterval();
-    }
-    return () => {
-      if (refreshTimerId) {
-        clearInterval(refreshTimerId);
-      }
-    };
-  }, [refreshTokenValue, accessToken]);
-
-  // Setup refresh interval (every 14 minutes to refresh 15-minute tokens)
-  const setupRefreshInterval = () => {
-    if (refreshTimerId) {
-      clearInterval(refreshTimerId);
-    }
-
-    // Refresh token every 14 minutes (before the 15-minute expiry)
-    refreshTimerId = window.setInterval(async () => {
-      if (refreshTokenValue) {
-        await refreshAccessToken(refreshTokenValue);
-      }
-    }, 14 * 60 * 1000);
-  };
-
-  // Refresh access token
-  const refreshAccessToken = async (refreshToken: string): Promise<boolean> => {
-    try {
-      const response = await fetch('/api/auth/refresh-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to refresh token');
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.accessToken) {
-        setAccessToken(data.accessToken);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error refreshing token:', error);
-      return false;
-    }
-  };
-
   // Register a new user
   const handleRegister = async (name: string, email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            role: 'user'
+          }
+        }
       });
 
-      const data = await response.json();
-
-      if (data.success && data.user) {
-        toast({
-          title: "Registration successful",
-          description: "Please log in with your new account",
-        });
-        return true;
-      } else {
+      if (error) {
+        console.error('Registration error:', error);
         toast({
           title: "Registration failed",
-          description: data.message || "Please try again",
+          description: error.message || "Please try again",
           variant: "destructive",
         });
         return false;
       }
+      
+      toast({
+        title: "Registration successful",
+        description: "Please check your email for verification",
+      });
+      return true;
     } catch (error) {
       console.error('Registration error:', error);
       toast({
@@ -171,36 +150,40 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const handleLogin = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      const data = await response.json();
-
-      if (data.success && data.user && data.accessToken && data.refreshToken) {
-        setUser(data.user);
-        setAccessToken(data.accessToken);
-        setRefreshTokenValue(data.refreshToken);
-        
-        // Store in localStorage
-        localStorage.setItem('user', JSON.stringify(data.user));
-        localStorage.setItem('refreshToken', data.refreshToken);
-        
-        toast({
-          title: "Login successful",
-          description: `Welcome back, ${data.user.name}!`,
-        });
-        return true;
-      } else {
+      if (error) {
         toast({
           title: "Login failed",
-          description: data.message || "Invalid email or password",
+          description: error.message || "Invalid email or password",
           variant: "destructive",
         });
         return false;
       }
+      
+      if (data.session) {
+        const userData: User = {
+          id: data.user.id,
+          email: data.user.email || '',
+          name: data.user.user_metadata?.name || '',
+          role: data.user.user_metadata?.role || 'user',
+        };
+        
+        setUser(userData);
+        setAccessToken(data.session.access_token);
+        setRefreshTokenValue(data.session.refresh_token);
+        
+        toast({
+          title: "Login successful",
+          description: `Welcome back, ${userData.name}!`,
+        });
+        return true;
+      }
+      
+      return false;
     } catch (error) {
       console.error('Login error:', error);
       toast({
@@ -218,23 +201,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const handleLogout = async (): Promise<void> => {
     setIsLoading(true);
     try {
-      if (refreshTokenValue) {
-        // Call logout API
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken: refreshTokenValue }),
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Logout error:', error);
+        toast({
+          title: "Logout error",
+          description: error.message,
+          variant: "destructive",
         });
       }
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Clear state and localStorage
+      // Clear state
       setUser(null);
       setAccessToken(null);
       setRefreshTokenValue(null);
-      localStorage.removeItem('user');
-      localStorage.removeItem('refreshToken');
       
       if (refreshTimerId) {
         clearInterval(refreshTimerId);
@@ -249,6 +232,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // Refresh access token
+  const refreshAccessToken = async (): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      
+      if (error || !data.session) {
+        console.error('Error refreshing token:', error);
+        return false;
+      }
+      
+      setAccessToken(data.session.access_token);
+      setRefreshTokenValue(data.session.refresh_token);
+      return true;
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      return false;
+    }
+  };
+
   // Context value
   const value = {
     user,
@@ -257,7 +259,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     login: handleLogin,
     register: handleRegister,
     logout: handleLogout,
-    refreshToken: () => refreshTokenValue ? refreshAccessToken(refreshTokenValue) : Promise.resolve(false),
+    refreshToken: refreshAccessToken,
   };
 
   return (

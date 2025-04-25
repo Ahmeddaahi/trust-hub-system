@@ -1,7 +1,7 @@
 
-import { register } from '../../lib/api/auth';
+import { supabase } from '../../integrations/supabase/client';
 
-// In a real Next.js project, this would be in pages/api/auth/register.ts
+// This is now just a wrapper around Supabase authentication
 export async function handleRegister(req: Request) {
   try {
     if (req.method !== 'POST') {
@@ -21,17 +21,34 @@ export async function handleRegister(req: Request) {
       });
     }
 
-    // Register user
-    const result = await register(name, email, password);
+    // Use Supabase to register user
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name,
+          role: 'user'
+        }
+      }
+    });
 
-    if (!result.success) {
-      return new Response(JSON.stringify(result), {
+    if (error) {
+      return new Response(JSON.stringify({ success: false, message: error.message }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: 'Registration successful',
+      user: {
+        id: data.user?.id,
+        email: data.user?.email,
+        name: data.user?.user_metadata?.name
+      }
+    }), {
       status: 201,
       headers: { 'Content-Type': 'application/json' }
     });
